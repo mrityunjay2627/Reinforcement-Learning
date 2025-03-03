@@ -17,6 +17,7 @@ class MLP(nn.Module):
         self.FC1 = nn.Linear(input_size, 50)
         self.FC2 = nn.Linear(50, num_of_actions)
     
+    # Q values for each possible action
     def forward(self, state):
         x = F.relu(self.FC1(state))
         q_value = self.FC2(x)
@@ -85,6 +86,14 @@ class DQN():
         action = probs.multinomial(1)
         return action.data[0,0]
     
+
+    '''
+    So when agent reaches new state, old state become new, last action become new action, last reward->new
+    so we need to update all the transition to get new,
+    by giving last reward and last signal it will give new action based on updated values
+    we will update the action function which is select_action, so we will integrate select action function,
+    in the future update function to select right action to take besides making all the updates 
+    '''
     def learn(self, batch_state, batch_next_state, batch_reward, batch_action):
         outputs = self.model(batch_state).gather(1,batch_action.unsqueeze(1)).squeeze(1) # q value
         next_outputs = self.model(batch_next_state).detach().max(1)[0] # max q value
@@ -93,3 +102,38 @@ class DQN():
         self.optimizer.zero_grad()
         td_loss.backward()
         self.optimizer.step()
+    
+    def update(self, reward, signal):
+        new_state = torch.Tensor(signal).float().unsqueeze(0)
+        self.memory.push(self.last_state, new_state, torch.LongTensor([int.self.last_action]), torch.Tensor([self.last_reward]))
+        action = self.select_action(new_state)
+        if len(self.memory.memory) > 100:
+            batch_state, next_batch_state, batch_action, batch_reward = self.memory.sample(100)
+            self.learn(batch_state, next_batch_state, batch_action, batch_reward)
+        self.last_action = action
+        self.last_state = new_state
+        self.last_reward = reward
+        self.reward_window.append(reward)
+        if len(self.reward_window)> 1000:
+            del self.reward_window[0]
+        return action
+
+    def save(self):
+        torch.save({'state_dict': self.model.state_dict(),
+                    'optimizer': self.optimizer.state_dict()}, 
+                    'SDC_Brain.pth')
+    
+    def load(self):
+        if os.path.isfile('SDC_Brain.pth'):
+            print('Loading Brain...')
+            checkpoint = torch.load('SDC_Brain.pth')
+            self.model.load_state_dict(checkpoint['state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer'])
+            print('Brain Loaded and Working!')
+        else:
+            print('File Not Found!')
+    
+    def score(self):
+        return sum(self.reward_window)/(len(self.reward_window)+1)
+    
+        

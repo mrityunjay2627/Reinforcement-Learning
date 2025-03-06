@@ -82,9 +82,10 @@ class DQN():
         replacement=True means that the same index can be sampled multiple times. If replacement=False, each index can be sampled at most once, and num_samples must be less than or equal to the number of elements in probs. 
 
         '''
-        probs = F.softmax(self.model(Variable(state, volatile=True))*100)
-        action = probs.multinomial(1)
-        return action.data[0,0]
+        with torch.no_grad():
+            probs = F.softmax(self.model(Variable(state))*100, dim=1)
+            action = probs.multinomial(1)
+            return action.data[0,0]
     
 
     '''
@@ -94,8 +95,8 @@ class DQN():
     we will update the action function which is select_action, so we will integrate select action function,
     in the future update function to select right action to take besides making all the updates 
     '''
-    def learn(self, batch_state, batch_next_state, batch_reward, batch_action):
-        outputs = self.model(batch_state).gather(1,batch_action.unsqueeze(1)).squeeze(1) # q value
+    def learn(self, batch_state, batch_next_state, batch_action, batch_reward):
+        outputs = self.model(batch_state).gather(1,batch_action.to(torch.int64).unsqueeze(1)).squeeze(1) # q value
         next_outputs = self.model(batch_next_state).detach().max(1)[0] # max q value
         target = self.gamma*next_outputs + batch_reward # discounted term
         td_loss = F.smooth_l1_loss(outputs, target) # Temporal Difference loss (Huber Loss). Huber Loss is less sensitive to outliers than MSE
@@ -105,7 +106,8 @@ class DQN():
     
     def update(self, reward, signal):
         new_state = torch.Tensor(signal).float().unsqueeze(0)
-        self.memory.push(self.last_state, new_state, torch.LongTensor([int.self.last_action]), torch.Tensor([self.last_reward]))
+        # print(torch.LongTensor([int(self.last_action)]))
+        self.memory.push((self.last_state, new_state, torch.LongTensor([int(self.last_action)]), torch.Tensor([self.last_reward])))
         action = self.select_action(new_state)
         if len(self.memory.memory) > 100:
             batch_state, next_batch_state, batch_action, batch_reward = self.memory.sample(100)
